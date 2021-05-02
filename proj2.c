@@ -14,24 +14,20 @@
 
 #include "out_writer.h"
 
-typedef struct {
-    int cnt;
-    sem_t cnt_mutex;
+#define OUT_FILE_NAME "proj2.out"
 
+typedef struct {
     int rd_cnt; // reindeer counter
     sem_t rd_mutex; // reindeer counter mutex
-    sem_t hitch_sem;
+    sem_t wait_hitch;
 
     int waiting; //number of elves waiting to enter Santa Workshop
-    int inside;
     bool closed; // sign put up
     sem_t elf_mutex; // counter mutex
-    sem_t queue;
 
     sem_t santa_sleep;
     sem_t santa_wait_hitch;
 
-    int elves;
     sem_t wait_workshop;
     sem_t wait_help;
     sem_t got_help;
@@ -84,7 +80,7 @@ void santa_process(shared_mem *shm, int ne, int nr)
     // now hitch
     for (int i = 0; i < nr; i++)
     {
-        sem_post(&shm->hitch_sem);
+        sem_post(&shm->wait_hitch);
     }
 
     sem_wait(&shm->santa_wait_hitch);
@@ -107,17 +103,6 @@ void elf_process(int elfId, int te, shared_mem *shm) {
         usleep(rand_range(0, te) * 1000);
 
         out_write("Elf %d: need help\n", elfId);
-
-        sem_wait(&shm->elf_mutex);
-        if (shm->closed)
-        {
-            sem_post(&shm->elf_mutex);
-            out_write("Elf %d: taking holidays\n", elfId);
-            exit(EXIT_SUCCESS);
-        }
-        sem_post(&shm->elf_mutex);
-
-        // need santas help!
 
         sem_wait(&shm->wait_workshop);
         sem_wait(&shm->elf_mutex);
@@ -152,10 +137,9 @@ void elf_process(int elfId, int te, shared_mem *shm) {
 
         sem_wait(&shm->elf_mutex);
         shm->waiting--;
-        //TODO out_write("Waiting = %d\n", shm->waiting);
         if (shm->waiting == 0)
         {
-            //TODO out_write("%d All elves left, kick the santa!\n", elfId);
+            // last elf in the workshop, santa can go to sleep
             sem_post(&shm->got_help);
             sem_post(&shm->wait_workshop);
         }
@@ -183,7 +167,7 @@ void reindeer_process(int rdId, int tr, shared_mem *shm)
     sem_post(&shm->rd_mutex);
 
     // wait to get hitched
-    sem_wait(&shm->hitch_sem);
+    sem_wait(&shm->wait_hitch);
 
     // got hitched
     out_write("RD %d: get hitched\n", rdId);
@@ -208,33 +192,34 @@ shared_mem *init_shared_mem(int nr)
    if (shm == MAP_FAILED)
        return NULL;
 
-    //TODO sem_init error handling
+    if (sem_init(&shm->rd_mutex, 1, 1) == -1)
+        return NULL;
 
-    sem_init(&shm->cnt_mutex, 1, 1);
+    if (sem_init(&shm->wait_hitch, 1, 0) == -1)
+        return NULL;
 
-    sem_init(&shm->rd_mutex, 1, 1);
+    if (sem_init(&shm->elf_mutex, 1, 1) == -1)
+        return NULL;
 
-    sem_init(&shm->hitch_sem, 1, 0);
+    if (sem_init(&shm->santa_sleep, 1, 0) == -1)
+        return NULL;
 
-    sem_init(&shm->elf_mutex, 1, 1);
+    if (sem_init(&shm->santa_wait_hitch, 1, 0) == -1)
+        return NULL;
 
-    sem_init(&shm->queue, 1, 0);
+    if (sem_init(&shm->wait_workshop, 1, 1) == -1)
+        return NULL;
 
-    sem_init(&shm->santa_sleep, 1, 0);
+    if (sem_init(&shm->wait_help, 1, 0) == -1)
+        return NULL;
 
-    sem_init(&shm->santa_wait_hitch, 1, 0);
-
-    sem_init(&shm->wait_workshop, 1, 1);
-
-    sem_init(&shm->wait_help, 1, 0);
-
-    sem_init(&shm->got_help, 1, 0);
+    if (sem_init(&shm->got_help, 1, 0) == -1)
+        return NULL;
 
     shm->rd_cnt = nr;
-    shm->cnt = 0;
-    shm->inside = 0;
     shm->waiting = 0;
     shm->closed = false;
+
     return shm;
 }
 
@@ -295,14 +280,25 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    FILE *f = fopen("proj2.out", "w");
-    out_writer_init(f);
+    FILE *f = fopen(OUT_FILE_NAME, "w");
+    if (f == NULL)
+    {
+        perror("proj2");
+        return EXIT_FAILURE;
+    }
+
+    if (!out_writer_init(f))
+    {
+        fclose(f);
+        fprintf(stderr, "Failed to init shared memory\n");
+        return EXIT_FAILURE;
+    }
 
     shared_mem *shm = init_shared_mem(nr);
     if (shm == NULL)
     {
-        //TODO error handling
-        fprintf(stderr, "Error: Failed to init shared memory");
+        fclose(f);
+        fprintf(stderr, "Error: Failed to init shared memory\n");
         return EXIT_FAILURE;
     }
 
@@ -316,6 +312,8 @@ int main(int argc, char *argv[])
     }
     else if (santa == -1)
     {
+        fclose(f);
+        fprintf(stderr, "Error: Failed forking santa!\n");
         return EXIT_FAILURE;
     }
 
@@ -330,12 +328,13 @@ int main(int argc, char *argv[])
         }
         else if (pid == -1)
         {
+            fclose(f);
             fprintf(stderr, "Error: Failed forking elf!\n");
             return EXIT_FAILURE;
         }
     }
 
-    // fork reindeers
+    // fork reindeer
     for (int i = 1; i <= nr; i++)
     {
         pid_t pid = fork();
@@ -346,6 +345,7 @@ int main(int argc, char *argv[])
         }
         else if (pid == -1)
         {
+            fclose(f);
             fprintf(stderr, "Error: Failed forking reindeer!\n");
             return EXIT_FAILURE;
         }

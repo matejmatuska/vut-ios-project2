@@ -14,6 +14,7 @@ static struct {
 
 static FILE *file;
 
+// return true on success, false otherwise
 bool out_writer_init(FILE *f)
 {
     file = f;
