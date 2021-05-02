@@ -3,7 +3,9 @@ LDLIBS= -lrt -lpthread
 
 BIN=proj2
 
-proj2: proj2.c
+proj2: proj2.o out_writer.o
+
+out_writer.o: out_writer.c out_writer.h
 
 .PHONY: run
 run: $(BIN)
