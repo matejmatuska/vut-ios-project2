@@ -1,3 +1,10 @@
+/*
+* out_writer.h
+* IOS - Projekt 2
+* Matej Matuška (xmatus36)
+* VUT FIT Brno
+* 02.05.2021
+*/
 #ifndef _OUT_WRITER_H_
 #define _OUT_WRITER_H_
 

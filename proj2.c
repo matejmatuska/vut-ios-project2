@@ -1,3 +1,10 @@
+/*
+ * proj2.c
+* IOS - Projekt 2
+* Matej Matuška (xmatus36)
+* VUT FIT Brno
+* 02.05.2021
+*/
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -189,7 +196,7 @@ shared_mem *init_shared_mem(int nr)
     shared_mem *shm = mmap(NULL, sizeof(shared_mem),
             PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
-   if (shm == MAP_FAILED)
+    if (shm == MAP_FAILED)
        return NULL;
 
     if (sem_init(&shm->rd_mutex, 1, 1) == -1)
@@ -221,6 +228,44 @@ shared_mem *init_shared_mem(int nr)
     shm->closed = false;
 
     return shm;
+}
+
+bool fork_elves(shared_mem *shm, int ne, int te)
+{
+    for (int i = 1; i <= ne; i++)
+    {
+        pid_t pid = fork();
+        if (pid == 0)
+        {
+            srand(time(NULL) * getpid());
+            elf_process(i, te, shm);
+        }
+        else if (pid == -1)
+        {
+            fprintf(stderr, "Error: Failed forking elf!\n");
+            return false;
+        }
+    }
+    return true;
+}
+
+bool fork_reinderr(shared_mem *shm, int nr, int tr)
+{
+    for (int i = 1; i <= nr; i++)
+    {
+        pid_t pid = fork();
+        if (pid == 0)
+        {
+            srand(time(NULL) * getpid());
+            reindeer_process(i, tr, shm);
+        }
+        else if (pid == -1)
+        {
+            fprintf(stderr, "Error: Failed forking reindeer!\n");
+            return false;
+        }
+    }
+    return true;
 }
 
 int main(int argc, char *argv[])
@@ -317,38 +362,16 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    // fork elves
-    for (int i = 1; i <= ne; i++)
+    if (!fork_elves(shm, ne, te))
     {
-        pid_t pid = fork();
-        if (pid == 0)
-        {
-            srand(time(NULL) * getpid());
-            elf_process(i, te, shm);
-        }
-        else if (pid == -1)
-        {
-            fclose(f);
-            fprintf(stderr, "Error: Failed forking elf!\n");
-            return EXIT_FAILURE;
-        }
+        fclose(f);
+        return EXIT_FAILURE;
     }
 
-    // fork reindeer
-    for (int i = 1; i <= nr; i++)
+    if (!fork_reinderr(shm, nr, tr))
     {
-        pid_t pid = fork();
-        if (pid == 0)
-        {
-            srand(time(NULL) * getpid());
-            reindeer_process(i, tr, shm);
-        }
-        else if (pid == -1)
-        {
-            fclose(f);
-            fprintf(stderr, "Error: Failed forking reindeer!\n");
-            return EXIT_FAILURE;
-        }
+        fclose(f);
+        return EXIT_FAILURE;
     }
 
     while(wait(NULL) > 0); // wait for all child processes

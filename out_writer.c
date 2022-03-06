@@ -1,3 +1,10 @@
+/*
+* out_writer.c
+* IOS - Projekt 2
+* Matej Matuška (xmatus36)
+* VUT FIT Brno
+* 02.05.2021
+*/
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdarg.h>
